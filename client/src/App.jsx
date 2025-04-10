@@ -30,7 +30,7 @@ function App() {
   const outputRef = useRef(null);
 
   useEffect(() => {
-    socketRef.current = io('http://localhost:3000');
+    socketRef.current = io('https://coderunner-backend-o7at.onrender.com');
 
     socketRef.current.on('output', (data) => {
       setOutput(prev => prev + data);
