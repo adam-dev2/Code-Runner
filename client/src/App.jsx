@@ -4,7 +4,6 @@ import { io } from 'socket.io-client';
 import { Play, Terminal, XCircle, Code2 } from 'lucide-react';
 
 const defaultCode = `#include <iostream>
-#include <vector>
 using namespace std;
 
 int main() {
