@@ -1,53 +1,127 @@
-const express = require('express')
-const http = require('http')
-const {Server} = require('socket.io')
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
 const cors = require('cors');
-const bodyParser = require('body-parser');
-const executeCpp = require('./utils/executeCpp')
+const fs = require('fs');
+const { spawn } = require('child_process');
+const path = require('path');
 
 const app = express();
+app.use(cors());
 
 const server = http.createServer(app);
-const io = new Server(server,{
-    cors:{
-        origin:'*',
-    }
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
 });
 
-app.use(cors());
-app.use(bodyParser.json());
+const tempDir = path.join(__dirname, 'temp');
+if (!fs.existsSync(tempDir)) {
+  fs.mkdirSync(tempDir);
+}
 
-app.get('/api',(req,res) => {
-    res.status(200).json({message: "API is Running"})
-})
+io.on('connection', (socket) => {
+  console.log(`⚡ New client connected: ${socket.id}`);
+  let currentProcess = null;
 
-//              COMMENTED CUZ THIS IS VERSION 1 CODE WHICH DOES NOT INCLUDE ACCEPTING RUNTIME INPUT 
-// app.post('/api/run',async(req,res)=>{
-//     const code = req.body.code;
-//     console.log(code);
-//     if(!code) {
-//         return res.status(404).json({message: "Code Not found"});
-//     }
-//     try {
-//         executeCpp(code);
-//         res.status(200).json({message: `Your code: ${code}`});
-//     }catch(err) {
-//         return res.status(500).json({message: `Serevr side Error: ${err}`});
-//     }
-// })
+  socket.on('runCode', ({ code }) => {
+    const sessionId = Date.now().toString();
+    const filePath = path.join(tempDir, `${sessionId}.cpp`);
+    const execPath = path.join(tempDir, `${sessionId}.out`); // `.exe` for Windows
 
-io.on('connection',(socket)=>{
-    console.log('Connected to front-end',socket.id);
+    // Write C++ code to temp file
+    try {
+      fs.writeFileSync(filePath, code);
+    } catch (err) {
+      socket.emit('output', `❌ Error writing file: ${err.message}\n`);
+      return;
+    }
 
-    socket.on('run-code',async({code})=>{
-        executeCpp(code,socket);
+    // Kill any previously running process
+    if (currentProcess && !currentProcess.killed) {
+      currentProcess.kill();
+    }
+
+    // Compile the code
+    const compile = spawn('g++', ['-o', execPath, filePath]);
+    currentProcess = compile;
+
+    compile.stderr.on('data', (data) => {
+      socket.emit('output', `❌ Compilation Error:\n${data.toString()}`);
     });
 
-    socket.on('disconnect',()=>{
-        console.log('Disconnected with the front-end',socket.id)
-    })
-})
+    compile.on('close', (code) => {
+      if (code !== 0) {
+        socket.emit('output', '❌ Compilation failed.\n');
+        socket.emit('executionEnd', { exitCode: code });
+        cleanupFiles(filePath, execPath);
+        return;
+      }
 
-server.listen(4000,()=>{
-    console.log("listening on port 4000");
-})
+      socket.emit('output', '✅ Compilation successful. Running...\n');
+
+      const run = spawn(execPath);
+      currentProcess = run;
+
+      run.stdout.on('data', (data) => {
+        const output = data.toString();
+        socket.emit('output', output);
+
+        // Check if input is likely needed
+        if (needsInput(output)) {
+          socket.emit('inputRequest');
+        }
+      });
+
+      run.stderr.on('data', (data) => {
+        socket.emit('output', `🔥 Runtime Error:\n${data.toString()}`);
+      });
+
+      socket.on('provideInput', (input) => {
+        if (run.stdin.writable) {
+          run.stdin.write(input + '\n');
+        }
+      });
+
+      run.on('close', (code) => {
+        socket.emit('output', `\n🚪 Program exited with code: ${code}\n`);
+        socket.emit('executionEnd', { exitCode: code });
+        cleanupFiles(filePath, execPath);
+      });
+
+      run.on('error', (err) => {
+        socket.emit('output', `💥 Error running program: ${err.message}\n`);
+        cleanupFiles(filePath, execPath);
+      });
+    });
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`👋 Client disconnected: ${socket.id}`);
+    if (currentProcess && !currentProcess.killed) {
+      currentProcess.kill();
+    }
+  });
+});
+
+// Helper function to detect if user input is likely required
+function needsInput(output) {
+  return /enter|input|:|>|\?\s*$/i.test(output.trim());
+}
+
+// Delete temporary files
+function cleanupFiles(file, exec) {
+  try {
+    if (fs.existsSync(file)) fs.unlinkSync(file);
+    if (fs.existsSync(exec)) fs.unlinkSync(exec);
+  } catch (err) {
+    console.error('Cleanup error:', err);
+  }
+}
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`🚀 Server listening on http://localhost:${PORT}`);
+});

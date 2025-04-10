@@ -1,9 +1,22 @@
-import React from 'react'
+import Editor from "@monaco-editor/react";
 
-const CodeEditor = () => {
+const CodeEditor = ({ code, setCode }) => {
   return (
-    <div>CodeEditor</div>
-  )
-}
+    <div className="w-full border rounded-lg overflow-hidden">
+      <Editor
+        height="300px"
+        defaultLanguage="cpp"
+        value={code}
+        onChange={(value) => setCode(value)}
+        theme="vs-dark"
+        options={{
+          fontSize: 14,
+          minimap: { enabled: false },
+          scrollBeyondLastLine: false,
+        }}
+      />
+    </div>
+  );
+};
 
-export default CodeEditor
+export default CodeEditor;
