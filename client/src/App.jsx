@@ -83,7 +83,7 @@ function App() {
       <div className="container mx-auto px-4 py-8">
         <div className="flex items-center gap-3 mb-6">
           <Code2 className="w-8 h-8 text-blue-400" />
-          <h1 className="text-3xl font-bold">Online C Compiler</h1>
+          <h1 className="text-3xl font-bold">Online C++ Compiler</h1>
           {isRunning && (
           <div className="bg-yellow-200 text-yellow-900 p-3 rounded-md mb-4 border border-yellow-300 text-sm flex items-center gap-2">
             ⚠️ This app is hosted on a free-tier server, so code execution might take a few seconds. Thanks for your patience!
